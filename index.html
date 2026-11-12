@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asistencia SED</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f8f9fa; }
+    .card { border-radius: 12px; border: none; }
+    input[readonly] { background-color: #e9ecef !important; cursor: not-allowed; font-weight: bold; color: #495057; }
+  </style>
+</head>
+<body class="d-flex align-items-center justify-content-center vh-100 px-3">
+  
+  <div class="card p-4 shadow-sm w-100" style="max-width: 400px;">
+    <h4 class="text-center mb-1 fw-bold text-primary">Marcación SED</h4>
+    <p id="badgeDispositivo" class="text-center small text-muted mb-4">Dispositivo sin vincular</p>
+    
+    <div class="mb-3">
+      <label class="form-label text-muted small">Documento de Identidad</label>
+      <input type="number" id="cedula" class="form-control form-control-lg" placeholder="Ej. 10203040" required>
+    </div>
+    
+    <div class="mb-3">
+      <label class="form-label text-muted small">Tipo de Registro</label>
+      <select id="tipo" class="form-select form-select-lg">
+        <option value="Entrada">Entrada</option>
+        <option value="Salida">Salida</option>
+      </select>
+    </div>
+    
+    <div class="mb-4">
+      <label class="form-label text-muted small">Novedad</label>
+      <select id="novedad" class="form-select form-select-lg">
+        <option value="Sin novedad">Sin novedad</option>
+        <option value="Retraso justificado">Retraso justificado</option>
+        <option value="Salida anticipada">Salida anticipada</option>
+      </select>
+    </div>
+    
+    <button id="btnRegistrar" class="btn btn-primary btn-lg w-100" onclick="procesarRegistro()">
+      Enviar Marcación
+    </button>
+    
+    <div id="mensaje" class="mt-3 text-center fw-bold"></div>
+
+    <!-- Botón de desvincular (se muestra automáticamente cuando hay una cédula guardada) -->
+    <div id="zonaDesvincular" class="mt-4 pt-3 border-top text-center d-none">
+      <button type="button" class="btn btn-outline-secondary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#modalDesvincular">
+        🔓 Desvincular cédula de este equipo
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal de seguridad para supervisor -->
+  <div class="modal fade" id="modalDesvincular" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold">Autorización de Supervisor</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">Ingresa el PIN administrativo para liberar este dispositivo y permitir registrar otra cédula:</p>
+          <input type="password" id="inputPinAdmin" inputmode="numeric" class="form-control text-center fs-5" placeholder="••••">
+          <div id="errorPin" class="text-danger small mt-2 d-none">PIN incorrecto. Intenta nuevamente.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="confirmarDesvinculacion()">Liberar Equipo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts necesarios de Bootstrap -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // ==========================================
+    // CONFIGURACIÓN (Modifica estos 5 valores)
+    // ==========================================
+    const SEDE_LAT = 4.677971692670607; // Latitud de tu sede
+    const SEDE_LON = -74.16386100666045; // Longitud de tu sede
+    const RADIO_PERMITIDO_METROS = 50; // Tolerancia en metros
+    const WEBHOOK_URL = 'TU_URL_DE_MAKE_AQUI'; 
+    const PIN_ADMIN = '7690'; // Clave secreta para liberar el teléfono
+    // ==========================================
+
+    const STORAGE_KEY = 'sed_cedula_vinculada';
+
+    window.addEventListener('DOMContentLoaded', () => {
+      aplicarEstadoBloqueo();
+    });
+
+    function aplicarEstadoBloqueo() {
+      const cedulaGuardada = localStorage.getItem(STORAGE_KEY);
+      const inputCedula = document.getElementById('cedula');
+      const badge = document.getElementById('badgeDispositivo');
+      const zonaDesvincular = document.getElementById('zonaDesvincular');
+
+      if (cedulaGuardada) {
+        inputCedula.value = cedulaGuardada;
+        inputCedula.readOnly = true;
+        badge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle">Dispositivo vinculado</span>';
+        zonaDesvincular.classList.remove('d-none');
+      } else {
+        inputCedula.value = '';
+        inputCedula.readOnly = false;
+        badge.innerHTML = 'Primera vez: el teléfono quedará vinculado a tu cédula';
+        zonaDesvincular.classList.add('d-none');
+      }
+    }
+
+    function confirmarDesvinculacion() {
+      const inputPin = document.getElementById('inputPinAdmin');
+      const errorPin = document.getElementById('errorPin');
+
+      if (inputPin.value === PIN_ADMIN) {
+        localStorage.removeItem(STORAGE_KEY);
+        inputPin.value = '';
+        errorPin.classList.add('d-none');
+        
+        // Cerrar el modal
+        const modalEl = document.getElementById('modalDesvincular');
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        modalInstance.hide();
+
+        aplicarEstadoBloqueo();
+        document.getElementById('mensaje').innerHTML = '<span class="text-info">Dispositivo liberado. Ya puedes ingresar una nueva cédula.</span>';
+      } else {
+        errorPin.classList.remove('d-none');
+        inputPin.value = '';
+        inputPin.focus();
+      }
+    }
+
+    function calcularDistancia(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; 
+      const rad = Math.PI / 180;
+      const dLat = (lat2 - lat1) * rad;
+      const dLon = (lon2 - lon1) * rad;
+      
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return Math.round(R * c); 
+    }
+
+    async function procesarRegistro() {
+      const cedula = document.getElementById('cedula').value.trim();
+      const tipo = document.getElementById('tipo').value;
+      const novedad = document.getElementById('novedad').value;
+      const btn = document.getElementById('btnRegistrar');
+      const mensaje = document.getElementById('mensaje');
+
+      if (!cedula) {
+        mensaje.innerHTML = '<span class="text-danger">Por favor ingresa tu cédula.</span>';
+        return;
+      }
+
+      btn.disabled = true;
+      mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Validando ubicación...';
+
+      if (!navigator.geolocation) {
+        mensaje.innerHTML = '<span class="text-danger">Tu navegador no soporta GPS.</span>';
+        btn.disabled = false;
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        
+        const distancia = calcularDistancia(lat, lon, SEDE_LAT, SEDE_LON);
+
+        if (distancia > RADIO_PERMITIDO_METROS) {
+          mensaje.innerHTML = `<span class="text-danger">Estás a ${distancia} metros de la sede. Debes estar dentro del rango de ${RADIO_PERMITIDO_METROS}m.</span>`;
+          btn.disabled = false;
+          return;
+        }
+
+        mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Guardando registro...';
+
+        const payload = {
+          cedula: cedula,
+          tipo: tipo,
+          novedad: novedad,
+          latitud: lat,
+          longitud: lon,
+          fechaHora: new Date().toISOString()
+        };
+
+        try {
+          const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok || response.status === 200 || response.status === 202) {
+            if (!localStorage.getItem(STORAGE_KEY)) {
+              localStorage.setItem(STORAGE_KEY, cedula);
+              aplicarEstadoBloqueo();
+            }
+            mensaje.innerHTML = '<span class="text-success">¡Marcación exitosa!</span>';
+          } else {
+            mensaje.innerHTML = '<span class="text-danger">Error del servidor al guardar.</span>';
+          }
+        } catch (error) {
+          if (!localStorage.getItem(STORAGE_KEY)) {
+            localStorage.setItem(STORAGE_KEY, cedula);
+            aplicarEstadoBloqueo();
+          }
+          mensaje.innerHTML = '<span class="text-success">¡Marcación enviada!</span>';
+        }
+        
+        setTimeout(() => { btn.disabled = false; }, 3000);
+
+      }, (err) => {
+        mensaje.innerHTML = '<span class="text-danger">Debes permitir el acceso a tu ubicación (GPS) para poder marcar.</span>';
+        btn.disabled = false;
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    }
+  </script>
+</body>
+</html>
