@@ -175,11 +175,11 @@ async function procesarRegistro() {
       };
 
       try {
-        const response = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+    const response = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // <--- ESTE ES EL CAMBIO CLAVE
+      body: JSON.stringify(payload)
+    });
 
         if (response.ok || response.status === 200 || response.status === 202) {
           if (!localStorage.getItem(STORAGE_KEY)) {
