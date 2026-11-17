@@ -149,7 +149,7 @@
       return Math.round(R * c); 
     }
 
-async function procesarRegistro() {
+    async function procesarRegistro() {
       const cedula = document.getElementById('cedula').value.trim();
       const tipo = document.getElementById('tipo').value;
       const novedad = document.getElementById('novedad').value;
@@ -162,44 +162,67 @@ async function procesarRegistro() {
       }
 
       btn.disabled = true;
-      mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Guardando registro...';
+      mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Validando ubicación...';
 
-      // PAQUETE DE DATOS SIN GPS (Para probar conexión limpia)
-      const payload = {
-        cedula: cedula,
-        tipo: tipo,
-        novedad: novedad,
-        latitud: "0",
-        longitud: "0",
-        fechaHora: new Date().toISOString()
-      };
+      if (!navigator.geolocation) {
+        mensaje.innerHTML = '<span class="text-danger">Tu navegador no soporta GPS.</span>';
+        btn.disabled = false;
+        return;
+      }
 
-      try {
-    const response = await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // <--- ESTE ES EL CAMBIO CLAVE
-      body: JSON.stringify(payload)
-    });
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        
+        const distancia = calcularDistancia(lat, lon, SEDE_LAT, SEDE_LON);
 
-        if (response.ok || response.status === 200 || response.status === 202) {
+        if (distancia > RADIO_PERMITIDO_METROS) {
+          mensaje.innerHTML = `<span class="text-danger">Estás a ${distancia} metros de la sede. Debes estar dentro del rango de ${RADIO_PERMITIDO_METROS}m.</span>`;
+          btn.disabled = false;
+          return;
+        }
+
+        mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Guardando registro...';
+
+        const payload = {
+          cedula: cedula,
+          tipo: tipo,
+          novedad: novedad,
+          latitud: lat,
+          longitud: lon,
+          fechaHora: new Date().toISOString()
+        };
+
+        try {
+          const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' }, // <- El truco del CORS
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok || response.status === 200 || response.status === 202) {
+            if (!localStorage.getItem(STORAGE_KEY)) {
+              localStorage.setItem(STORAGE_KEY, cedula);
+              aplicarEstadoBloqueo();
+            }
+            mensaje.innerHTML = '<span class="text-success">¡Marcación exitosa!</span>';
+          } else {
+            mensaje.innerHTML = '<span class="text-danger">Error del servidor al guardar.</span>';
+          }
+        } catch (error) {
           if (!localStorage.getItem(STORAGE_KEY)) {
             localStorage.setItem(STORAGE_KEY, cedula);
             aplicarEstadoBloqueo();
           }
-          mensaje.innerHTML = '<span class="text-success">¡Marcación exitosa!</span>';
-        } else {
-          mensaje.innerHTML = '<span class="text-danger">Error del servidor al guardar.</span>';
+          mensaje.innerHTML = '<span class="text-success">¡Marcación enviada!</span>';
         }
-      } catch (error) {
-        // Si hay error de CORS igual lo marcamos como enviado por si Google lo procesó en segundo plano
-        if (!localStorage.getItem(STORAGE_KEY)) {
-          localStorage.setItem(STORAGE_KEY, cedula);
-          aplicarEstadoBloqueo();
-        }
-        mensaje.innerHTML = '<span class="text-success">¡Marcación enviada!</span>';
-      }
-      
-      setTimeout(() => { btn.disabled = false; }, 3000);
+        
+        setTimeout(() => { btn.disabled = false; }, 3000);
+
+      }, (err) => {
+        mensaje.innerHTML = '<span class="text-danger">Debes permitir el acceso a tu ubicación (GPS) para poder marcar.</span>';
+        btn.disabled = false;
+      }, { enableHighAccuracy: true, timeout: 10000 });
     }
   </script>
 </body>
