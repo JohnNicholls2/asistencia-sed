@@ -9,6 +9,7 @@
     body { background-color: #f8f9fa; }
     .card { border-radius: 12px; border: none; }
     input[readonly] { background-color: #e9ecef !important; cursor: not-allowed; font-weight: bold; color: #495057; }
+    .btn-marcacion { padding: 14px; font-weight: 600; border-radius: 10px; }
   </style>
 </head>
 <body class="d-flex align-items-center justify-content-center vh-100 px-3">
@@ -22,14 +23,6 @@
       <input type="number" id="cedula" class="form-control form-control-lg" placeholder="Ej. 10203040" required>
     </div>
     
-    <div class="mb-3">
-      <label class="form-label text-muted small">Tipo de Registro</label>
-      <select id="tipo" class="form-select form-select-lg">
-        <option value="Entrada">Entrada</option>
-        <option value="Salida">Salida</option>
-      </select>
-    </div>
-    
     <div class="mb-4">
       <label class="form-label text-muted small">Novedad</label>
       <select id="novedad" class="form-select form-select-lg">
@@ -39,9 +32,19 @@
       </select>
     </div>
     
-    <button id="btnRegistrar" class="btn btn-primary btn-lg w-100" onclick="procesarRegistro()">
-      Enviar Marcación
-    </button>
+    <!-- Botones de Entrada y Salida -->
+    <div class="row g-2">
+      <div class="col-6">
+        <button id="btnEntrada" class="btn btn-success btn-lg w-100 btn-marcacion" onclick="procesarRegistro('Entrada')">
+          Entrada
+        </button>
+      </div>
+      <div class="col-6">
+        <button id="btnSalida" class="btn btn-danger btn-lg w-100 btn-marcacion" onclick="procesarRegistro('Salida')">
+          Salida
+        </button>
+      </div>
+    </div>
     
     <div id="mensaje" class="mt-3 text-center fw-bold"></div>
 
@@ -94,6 +97,11 @@
       aplicarEstadoBloqueo();
     });
 
+    function toggleBotones(estadoDeshabilitado) {
+      document.getElementById('btnEntrada').disabled = estadoDeshabilitado;
+      document.getElementById('btnSalida').disabled = estadoDeshabilitado;
+    }
+
     function aplicarEstadoBloqueo() {
       const cedulaGuardada = localStorage.getItem(STORAGE_KEY);
       const inputCedula = document.getElementById('cedula');
@@ -122,7 +130,6 @@
         inputPin.value = '';
         errorPin.classList.add('d-none');
         
-        // Cerrar el modal
         const modalEl = document.getElementById('modalDesvincular');
         const modalInstance = bootstrap.Modal.getInstance(modalEl);
         modalInstance.hide();
@@ -149,11 +156,9 @@
       return Math.round(R * c); 
     }
 
-    async function procesarRegistro() {
+    async function procesarRegistro(tipoMarcacion) {
       const cedula = document.getElementById('cedula').value.trim();
-      const tipo = document.getElementById('tipo').value;
       const novedad = document.getElementById('novedad').value;
-      const btn = document.getElementById('btnRegistrar');
       const mensaje = document.getElementById('mensaje');
 
       if (!cedula) {
@@ -161,12 +166,12 @@
         return;
       }
 
-      btn.disabled = true;
-      mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Validando ubicación...';
+      toggleBotones(true);
+      mensaje.innerHTML = `<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Validando ubicación para ${tipoMarcacion}...`;
 
       if (!navigator.geolocation) {
         mensaje.innerHTML = '<span class="text-danger">Tu navegador no soporta GPS.</span>';
-        btn.disabled = false;
+        toggleBotones(false);
         return;
       }
 
@@ -178,15 +183,15 @@
 
         if (distancia > RADIO_PERMITIDO_METROS) {
           mensaje.innerHTML = `<span class="text-danger">Estás a ${distancia} metros de la sede. Debes estar dentro del rango de ${RADIO_PERMITIDO_METROS}m.</span>`;
-          btn.disabled = false;
+          toggleBotones(false);
           return;
         }
 
-        mensaje.innerHTML = '<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Guardando registro...';
+        mensaje.innerHTML = `<span class="text-primary spinner-border spinner-border-sm" role="status"></span> Guardando ${tipoMarcacion.toLowerCase()}...`;
 
         const payload = {
           cedula: cedula,
-          tipo: tipo,
+          tipo: tipoMarcacion,
           novedad: novedad,
           latitud: lat,
           longitud: lon,
@@ -196,7 +201,7 @@
         try {
           const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain' }, // <- El truco del CORS
+            headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify(payload)
           });
 
@@ -205,7 +210,7 @@
               localStorage.setItem(STORAGE_KEY, cedula);
               aplicarEstadoBloqueo();
             }
-            mensaje.innerHTML = '<span class="text-success">¡Marcación exitosa!</span>';
+            mensaje.innerHTML = `<span class="text-success">¡${tipoMarcacion} registrada con éxito!</span>`;
           } else {
             mensaje.innerHTML = '<span class="text-danger">Error del servidor al guardar.</span>';
           }
@@ -214,14 +219,14 @@
             localStorage.setItem(STORAGE_KEY, cedula);
             aplicarEstadoBloqueo();
           }
-          mensaje.innerHTML = '<span class="text-success">¡Marcación enviada!</span>';
+          mensaje.innerHTML = `<span class="text-success">¡${tipoMarcacion} enviada!</span>`;
         }
         
-        setTimeout(() => { btn.disabled = false; }, 3000);
+        setTimeout(() => { toggleBotones(false); }, 3000);
 
       }, (err) => {
         mensaje.innerHTML = '<span class="text-danger">Debes permitir el acceso a tu ubicación (GPS) para poder marcar.</span>';
-        btn.disabled = false;
+        toggleBotones(false);
       }, { enableHighAccuracy: true, timeout: 10000 });
     }
   </script>
